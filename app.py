@@ -113,12 +113,13 @@ if 'poll_votes' not in st.session_state:
 if 'vdo_link' not in st.session_state:
     st.session_state.vdo_link = ""
 if 'teacher_password' not in st.session_state:
-    # Cargar contraseña desde secrets de Streamlit Cloud
+    # Cargar contraseña SOLO desde secrets de Streamlit
     try:
         st.session_state.teacher_password = st.secrets["teacher_password"]
-    except:
-        # Fallback si no está configurado en secrets
-        st.session_state.teacher_password = "maestro123"
+    except KeyError:
+        # Si no está configurado en secrets, mostrar error
+        st.error("⚠️ ERROR: La contraseña del maestro no está configurada. Por favor configura 'teacher_password' en Streamlit Secrets.")
+        st.stop()
 if 'connected_students' not in st.session_state:
     st.session_state.connected_students = {}  # {user_id: {'username': str, 'last_activity': datetime}}
 
