@@ -156,6 +156,11 @@ else:
             st.session_state.username = None
             st.session_state.user_id = None
             st.rerun()
+        
+        # Botón de actualizar para estudiantes
+        if st.session_state.user_type == "estudiante":
+            if st.button("🔄 Actualizar"):
+                st.rerun()
     
     st.markdown("---")
     
@@ -394,3 +399,10 @@ else:
         <p>{footer_text}</p>
     </div>
     """, unsafe_allow_html=True)
+    
+    # Auto-refresh para estudiantes (cada 5 segundos)
+    if st.session_state.user_type == "estudiante":
+        import asyncio
+        placeholder = st.empty()
+        time.sleep(5)
+        st.rerun()
