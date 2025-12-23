@@ -4,6 +4,9 @@ import pandas as pd
 from datetime import datetime
 import time
 import hashlib
+import json
+import os
+from pathlib import Path
 
 # Configuración de la página
 st.set_page_config(
@@ -11,6 +14,28 @@ st.set_page_config(
     page_icon="🎓",
     layout="wide"
 )
+
+# Directorio para datos compartidos
+DATA_DIR = Path("shared_data")
+DATA_DIR.mkdir(exist_ok=True)
+
+# Funciones para manejo de datos compartidos
+def save_shared_data(key, data):
+    """Guardar datos compartidos en archivo JSON"""
+    file_path = DATA_DIR / f"{key}.json"
+    with open(file_path, 'w') as f:
+        json.dump(data, f)
+
+def load_shared_data(key, default=None):
+    """Cargar datos compartidos desde archivo JSON"""
+    file_path = DATA_DIR / f"{key}.json"
+    if file_path.exists():
+        try:
+            with open(file_path, 'r') as f:
+                return json.load(f)
+        except:
+            return default
+    return default
 
 # CSS personalizado
 st.markdown("""
@@ -138,15 +163,21 @@ if st.session_state.user_type is None:
 else:
     # Actualizar actividad del estudiante al cargar la página
     if st.session_state.user_type == "estudiante":
-        if st.session_state.user_id not in st.session_state.connected_students:
+        # Cargar estudiantes conectados
+        connected = load_shared_data('connected_students', {})
+        
+        if st.session_state.user_id not in connected:
             # Re-registrar al estudiante si no está en la lista
-            st.session_state.connected_students[st.session_state.user_id] = {
+            connected[st.session_state.user_id] = {
                 'username': st.session_state.username,
-                'last_activity': datetime.now()
+                'last_activity': datetime.now().isoformat()
             }
         else:
             # Actualizar actividad
-            st.session_state.connected_students[st.session_state.user_id]['last_activity'] = datetime.now()
+            connected[st.session_state.user_id]['last_activity'] = datetime.now().isoformat()
+        
+        # Guardar cambios
+        save_shared_data('connected_students', connected)
     
     # Header con información del usuario
     col_header1, col_header2, col_header3 = st.columns([2, 2, 1])
@@ -185,16 +216,21 @@ else:
             
             # Link de VDO.Ninja
             st.subheader("📹 Configuración del Stream")
+            
+            # Cargar link guardado
+            saved_link = load_shared_data('vdo_link', '')
+            
             vdo_link = st.text_input(
                 "Link de VDO.Ninja",
-                value=st.session_state.vdo_link,
+                value=saved_link,
                 placeholder="https://vdo.ninja/...",
                 help="Pega aquí tu link de VDO.Ninja"
             )
             
             if st.button("💾 Guardar Link"):
+                save_shared_data('vdo_link', vdo_link)
                 st.session_state.vdo_link = vdo_link
-                st.success("Link guardado!")
+                st.success("Link guardado y compartido con todos!")
             
             st.divider()
             
@@ -203,15 +239,19 @@ else:
             
             if st.button("🚀 Lanzar Pregunta ABCD", use_container_width=True):
                 new_poll = {
-                    'id': len(st.session_state.polls),
+                    'id': int(datetime.now().timestamp()),
                     'question': 'Pregunta',
                     'options': ['A', 'B', 'C', 'D'],
                     'votes': {'A': 0, 'B': 0, 'C': 0, 'D': 0},
                     'timestamp': datetime.now().strftime("%H:%M:%S"),
                     'active': True,
-                    'voters': []  # Lista de IDs de usuarios que ya votaron
+                    'voters': []
                 }
-                st.session_state.polls.append(new_poll)
+                
+                # Guardar encuesta en archivo compartido
+                save_shared_data('current_poll', new_poll)
+                save_shared_data('poll_votes', {})
+                
                 st.session_state.current_poll = new_poll
                 st.success("¡Pregunta lanzada!")
                 st.rerun()
@@ -219,6 +259,7 @@ else:
             if st.session_state.current_poll and st.session_state.current_poll.get('active', False):
                 if st.button("❌ Cerrar Encuesta Actual"):
                     st.session_state.current_poll['active'] = False
+                    save_shared_data('current_poll', st.session_state.current_poll)
                     st.session_state.current_poll = None
                     st.rerun()
             
@@ -227,23 +268,34 @@ else:
             # Estudiantes conectados
             st.subheader("👥 Estudiantes Conectados")
             
+            # Cargar estudiantes conectados
+            connected_students = load_shared_data('connected_students', {})
+            
             # Limpiar estudiantes inactivos (más de 5 minutos sin actividad)
             current_time = datetime.now()
             inactive_students = []
-            for user_id, data in st.session_state.connected_students.items():
-                if (current_time - data['last_activity']).seconds > 300:  # 5 minutos
+            for user_id, data in connected_students.items():
+                try:
+                    last_activity = datetime.fromisoformat(data['last_activity'])
+                    if (current_time - last_activity).seconds > 300:  # 5 minutos
+                        inactive_students.append(user_id)
+                except:
                     inactive_students.append(user_id)
             
             for user_id in inactive_students:
-                del st.session_state.connected_students[user_id]
+                del connected_students[user_id]
+            
+            # Guardar cambios
+            if inactive_students:
+                save_shared_data('connected_students', connected_students)
             
             # Mostrar lista de estudiantes
-            num_students = len(st.session_state.connected_students)
+            num_students = len(connected_students)
             st.metric("Total de estudiantes", num_students)
             
             if num_students > 0:
                 st.markdown("**Lista de estudiantes:**")
-                for user_id, data in st.session_state.connected_students.items():
+                for user_id, data in connected_students.items():
                     st.text(f"👨‍🎓 {data['username']}")
             else:
                 st.info("No hay estudiantes conectados")
@@ -252,8 +304,9 @@ else:
             
             # Estadísticas de encuesta actual
             st.subheader("📈 Estadísticas de Encuesta")
-            if st.session_state.current_poll and st.session_state.current_poll.get('active', False):
-                total_votes = len(st.session_state.current_poll.get('voters', []))
+            shared_poll = load_shared_data('current_poll', None)
+            if shared_poll and shared_poll.get('active', False):
+                total_votes = len(shared_poll.get('voters', []))
                 st.metric("Estudiantes que han votado", total_votes)
                 if num_students > 0:
                     participation = (total_votes / num_students) * 100
@@ -276,11 +329,14 @@ else:
     with col1:
         st.header("📹 Stream en Vivo")
         
-        if st.session_state.vdo_link:
+        # Cargar link compartido
+        shared_vdo_link = load_shared_data('vdo_link', '')
+        
+        if shared_vdo_link:
             # Incrustar iframe de VDO.Ninja
             iframe_html = f"""
             <iframe 
-                src="{st.session_state.vdo_link}" 
+                src="{shared_vdo_link}" 
                 style="width:100%; height:600px; border:none; border-radius:10px;"
                 allow="camera; microphone; display-capture; autoplay; clipboard-write"
                 allowfullscreen>
@@ -341,13 +397,19 @@ else:
             def mostrar_encuestas():
                 st.subheader("Encuestas Activas")
                 
-                if st.session_state.current_poll and st.session_state.current_poll.get('active', False):
-                    poll = st.session_state.current_poll
+                # Cargar encuesta compartida
+                shared_poll = load_shared_data('current_poll', None)
+                
+                if shared_poll and shared_poll.get('active', False):
+                    poll = shared_poll
                     
                     st.markdown(f"### {poll['question']}")
                     st.caption(f"Creada a las {poll['timestamp']}")
                     
-                    # Verificar si el usuario ya votó (con validación)
+                    # Cargar votos compartidos
+                    all_votes = load_shared_data('poll_votes', {})
+                    
+                    # Verificar si el usuario ya votó
                     user_has_voted = st.session_state.user_id in poll.get('voters', [])
                     
                     if st.session_state.user_type == "estudiante":
@@ -357,27 +419,33 @@ else:
                             # Opciones de votación
                             for option in poll['options']:
                                 if st.button(option, key=f"vote_{poll['id']}_{option}", use_container_width=True):
-                                    # Inicializar 'voters' si no existe
-                                    if 'voters' not in poll:
-                                        poll['voters'] = []
-                                    
+                                    # Registrar voto
                                     poll['votes'][option] += 1
                                     poll['voters'].append(st.session_state.user_id)
                                     
-                                    # Registrar el voto del usuario
-                                    if st.session_state.user_id not in st.session_state.poll_votes:
-                                        st.session_state.poll_votes[st.session_state.user_id] = {}
-                                    st.session_state.poll_votes[st.session_state.user_id][poll['id']] = option
+                                    # Guardar voto del usuario
+                                    all_votes[st.session_state.user_id] = {
+                                        'poll_id': poll['id'],
+                                        'option': option
+                                    }
+                                    
+                                    # Guardar en archivos compartidos
+                                    save_shared_data('current_poll', poll)
+                                    save_shared_data('poll_votes', all_votes)
                                     
                                     # Actualizar actividad del estudiante
-                                    st.session_state.connected_students[st.session_state.user_id]['last_activity'] = datetime.now()
+                                    connected = load_shared_data('connected_students', {})
+                                    if st.session_state.user_id in connected:
+                                        connected[st.session_state.user_id]['last_activity'] = datetime.now().isoformat()
+                                        save_shared_data('connected_students', connected)
                                     
                                     st.success(f"✅ ¡Voto registrado para: {option}!")
                                     time.sleep(1)
                                     st.rerun()
                         else:
                             # Mostrar qué opción votó el estudiante
-                            voted_option = st.session_state.poll_votes.get(st.session_state.user_id, {}).get(poll['id'], "")
+                            user_vote = all_votes.get(st.session_state.user_id, {})
+                            voted_option = user_vote.get('option', '')
                             st.success(f"✅ Ya has votado por: **{voted_option}**")
                             st.info("No puedes cambiar tu voto")
                     
