@@ -270,7 +270,7 @@ else:
             st.markdown(iframe_html, unsafe_allow_html=True)
         else:
             st.info("👨‍🏫 El maestro aún no ha configurado el stream")
-            st.image("https://via.placeholder.com/800x450/1f1f1f/ffffff?text=Esperando+Stream", use_container_width=True)
+            st.image("https://via.placeholder.com/800x450/1f1f1f/ffffff?text=Esperando+Stream", width=800)
     
     # Columna derecha - Interacción
     with col2:
