@@ -145,11 +145,15 @@ if st.session_state.user_type is None:
                     st.session_state.user_type = "estudiante"
                     st.session_state.username = username
                     st.session_state.user_id = generate_user_id(username, "estudiante")
-                    # Registrar estudiante conectado
-                    st.session_state.connected_students[st.session_state.user_id] = {
+                    
+                    # Registrar estudiante conectado en archivo compartido
+                    connected = load_shared_data('connected_students', {})
+                    connected[st.session_state.user_id] = {
                         'username': username,
-                        'last_activity': datetime.now()
+                        'last_activity': datetime.now().isoformat()
                     }
+                    save_shared_data('connected_students', connected)
+                    
                     st.success("¡Bienvenido Estudiante!")
                     time.sleep(1)
                     st.rerun()
@@ -237,6 +241,11 @@ else:
             # Lanzar pregunta
             st.subheader("📊 Lanzar Pregunta")
             
+            # Mostrar si hay una encuesta activa
+            current_poll_status = load_shared_data('current_poll', None)
+            if current_poll_status and current_poll_status.get('active', False):
+                st.warning(f"⚠️ Ya hay una pregunta activa desde las {current_poll_status['timestamp']}")
+            
             if st.button("🚀 Lanzar Pregunta ABCD", use_container_width=True):
                 new_poll = {
                     'id': int(datetime.now().timestamp()),
@@ -253,14 +262,18 @@ else:
                 save_shared_data('poll_votes', {})
                 
                 st.session_state.current_poll = new_poll
-                st.success("¡Pregunta lanzada!")
+                st.success("¡Pregunta lanzada y visible para todos los estudiantes!")
+                time.sleep(1)
                 st.rerun()
             
-            if st.session_state.current_poll and st.session_state.current_poll.get('active', False):
+            # Verificar si hay encuesta activa desde archivo compartido
+            shared_poll = load_shared_data('current_poll', None)
+            if shared_poll and shared_poll.get('active', False):
                 if st.button("❌ Cerrar Encuesta Actual"):
-                    st.session_state.current_poll['active'] = False
-                    save_shared_data('current_poll', st.session_state.current_poll)
+                    shared_poll['active'] = False
+                    save_shared_data('current_poll', shared_poll)
                     st.session_state.current_poll = None
+                    st.success("Encuesta cerrada")
                     st.rerun()
             
             st.divider()
@@ -319,7 +332,8 @@ else:
             # Moderación
             st.subheader("🛡️ Moderación")
             if st.button("🗑️ Limpiar Chat"):
-                st.session_state.messages = []
+                save_shared_data('messages', [])
+                st.success("Chat limpiado")
                 st.rerun()
     
     # Layout principal
@@ -353,26 +367,34 @@ else:
         tab1, tab2 = st.tabs(["💬 Chat", "📊 Encuestas"])
         
         with tab1:
-            st.subheader("Chat en Vivo")
+            # Fragmento que se auto-actualiza cada 2 segundos
+            @fragment(run_every="2s")
+            def mostrar_chat():
+                st.subheader("Chat en Vivo")
+                
+                # Cargar mensajes compartidos
+                shared_messages = load_shared_data('messages', [])
+                
+                # Contenedor de mensajes
+                chat_container = st.container(height=400)
+                
+                with chat_container:
+                    for msg in shared_messages[-50:]:  # Últimos 50 mensajes
+                        # Verificar si el mensaje tiene el campo 'type', si no, asignar 'estudiante' por defecto
+                        msg_type = msg.get('type', 'estudiante')
+                        msg_class = "teacher-message" if msg_type == "maestro" else "chat-message"
+                        badge_class = "teacher-badge" if msg_type == "maestro" else "student-badge"
+                        role_emoji = "👨‍🏫" if msg_type == "maestro" else "👨‍🎓"
+                        
+                        st.markdown(f"""
+                        <div class="chat-message {msg_class}">
+                            <span class='user-badge {badge_class}'>{role_emoji}</span>
+                            <strong>{msg['user']}</strong> <small>{msg['time']}</small><br>
+                            {msg['text']}
+                        </div>
+                        """, unsafe_allow_html=True)
             
-            # Contenedor de mensajes
-            chat_container = st.container(height=400)
-            
-            with chat_container:
-                for msg in st.session_state.messages[-50:]:  # Últimos 50 mensajes
-                    # Verificar si el mensaje tiene el campo 'type', si no, asignar 'estudiante' por defecto
-                    msg_type = msg.get('type', 'estudiante')
-                    msg_class = "teacher-message" if msg_type == "maestro" else "chat-message"
-                    badge_class = "teacher-badge" if msg_type == "maestro" else "student-badge"
-                    role_emoji = "👨‍🏫" if msg_type == "maestro" else "👨‍🎓"
-                    
-                    st.markdown(f"""
-                    <div class="chat-message {msg_class}">
-                        <span class='user-badge {badge_class}'>{role_emoji}</span>
-                        <strong>{msg['user']}</strong> <small>{msg['time']}</small><br>
-                        {msg['text']}
-                    </div>
-                    """, unsafe_allow_html=True)
+            mostrar_chat()
             
             # Input de chat
             with st.form(key='chat_form', clear_on_submit=True):
@@ -380,15 +402,28 @@ else:
                 submit = st.form_submit_button("Enviar")
                 
                 if submit and message:
-                    st.session_state.messages.append({
+                    # Cargar mensajes actuales
+                    shared_messages = load_shared_data('messages', [])
+                    
+                    # Agregar nuevo mensaje
+                    new_message = {
                         'user': st.session_state.username,
                         'type': st.session_state.user_type,
                         'text': message,
                         'time': datetime.now().strftime("%H:%M:%S")
-                    })
+                    }
+                    shared_messages.append(new_message)
+                    
+                    # Guardar mensajes
+                    save_shared_data('messages', shared_messages)
+                    
                     # Actualizar actividad del estudiante
                     if st.session_state.user_type == "estudiante":
-                        st.session_state.connected_students[st.session_state.user_id]['last_activity'] = datetime.now()
+                        connected = load_shared_data('connected_students', {})
+                        if st.session_state.user_id in connected:
+                            connected[st.session_state.user_id]['last_activity'] = datetime.now().isoformat()
+                            save_shared_data('connected_students', connected)
+                    
                     st.rerun()
         
         with tab2:
