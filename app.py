@@ -1,4 +1,5 @@
 import streamlit as st
+from streamlit import fragment
 import pandas as pd
 from datetime import datetime
 import time
@@ -335,87 +336,92 @@ else:
                     st.rerun()
         
         with tab2:
-            st.subheader("Encuestas Activas")
-            
-            if st.session_state.current_poll and st.session_state.current_poll.get('active', False):
-                poll = st.session_state.current_poll
+            # Fragmento que se auto-actualiza cada 3 segundos para estudiantes
+            @fragment(run_every="3s" if st.session_state.user_type == "estudiante" else None)
+            def mostrar_encuestas():
+                st.subheader("Encuestas Activas")
                 
-                st.markdown(f"### {poll['question']}")
-                st.caption(f"Creada a las {poll['timestamp']}")
-                
-                # Verificar si el usuario ya votó (con validación)
-                user_has_voted = st.session_state.user_id in poll.get('voters', [])
-                
-                if st.session_state.user_type == "estudiante":
-                    if not user_has_voted:
-                        st.info("🗳️ Selecciona una opción para votar (solo puedes votar una vez)")
-                        
-                        # Opciones de votación
-                        for option in poll['options']:
-                            if st.button(option, key=f"vote_{poll['id']}_{option}", use_container_width=True):
-                                # Inicializar 'voters' si no existe
-                                if 'voters' not in poll:
-                                    poll['voters'] = []
-                                
-                                poll['votes'][option] += 1
-                                poll['voters'].append(st.session_state.user_id)
-                                
-                                # Registrar el voto del usuario
-                                if st.session_state.user_id not in st.session_state.poll_votes:
-                                    st.session_state.poll_votes[st.session_state.user_id] = {}
-                                st.session_state.poll_votes[st.session_state.user_id][poll['id']] = option
-                                
-                                # Actualizar actividad del estudiante
-                                st.session_state.connected_students[st.session_state.user_id]['last_activity'] = datetime.now()
-                                
-                                st.success(f"✅ ¡Voto registrado para: {option}!")
-                                time.sleep(1)
-                                st.rerun()
-                    else:
-                        # Mostrar qué opción votó el estudiante
-                        voted_option = st.session_state.poll_votes.get(st.session_state.user_id, {}).get(poll['id'], "")
-                        st.success(f"✅ Ya has votado por: **{voted_option}**")
-                        st.info("No puedes cambiar tu voto")
-                
-                st.divider()
-                
-                # Resultados (visible para todos)
-                st.subheader("📊 Resultados en Vivo")
-                total_votes = sum(poll['votes'].values())
-                
-                if total_votes > 0:
-                    for option, votes in poll['votes'].items():
-                        percentage = (votes / total_votes) * 100
-                        
-                        # Mostrar barra de progreso y estadísticas
-                        col_opt, col_num = st.columns([3, 1])
-                        with col_opt:
-                            st.progress(percentage / 100)
-                            st.caption(f"{option}")
-                        with col_num:
-                            st.metric("", f"{votes}", f"{percentage:.1f}%")
+                if st.session_state.current_poll and st.session_state.current_poll.get('active', False):
+                    poll = st.session_state.current_poll
                     
-                    st.caption(f"Total de votos: {total_votes}")
+                    st.markdown(f"### {poll['question']}")
+                    st.caption(f"Creada a las {poll['timestamp']}")
+                    
+                    # Verificar si el usuario ya votó (con validación)
+                    user_has_voted = st.session_state.user_id in poll.get('voters', [])
+                    
+                    if st.session_state.user_type == "estudiante":
+                        if not user_has_voted:
+                            st.info("🗳️ Selecciona una opción para votar (solo puedes votar una vez)")
+                            
+                            # Opciones de votación
+                            for option in poll['options']:
+                                if st.button(option, key=f"vote_{poll['id']}_{option}", use_container_width=True):
+                                    # Inicializar 'voters' si no existe
+                                    if 'voters' not in poll:
+                                        poll['voters'] = []
+                                    
+                                    poll['votes'][option] += 1
+                                    poll['voters'].append(st.session_state.user_id)
+                                    
+                                    # Registrar el voto del usuario
+                                    if st.session_state.user_id not in st.session_state.poll_votes:
+                                        st.session_state.poll_votes[st.session_state.user_id] = {}
+                                    st.session_state.poll_votes[st.session_state.user_id][poll['id']] = option
+                                    
+                                    # Actualizar actividad del estudiante
+                                    st.session_state.connected_students[st.session_state.user_id]['last_activity'] = datetime.now()
+                                    
+                                    st.success(f"✅ ¡Voto registrado para: {option}!")
+                                    time.sleep(1)
+                                    st.rerun()
+                        else:
+                            # Mostrar qué opción votó el estudiante
+                            voted_option = st.session_state.poll_votes.get(st.session_state.user_id, {}).get(poll['id'], "")
+                            st.success(f"✅ Ya has votado por: **{voted_option}**")
+                            st.info("No puedes cambiar tu voto")
+                    
+                    st.divider()
+                    
+                    # Resultados (visible para todos)
+                    st.subheader("📊 Resultados en Vivo")
+                    total_votes = sum(poll['votes'].values())
+                    
+                    if total_votes > 0:
+                        for option, votes in poll['votes'].items():
+                            percentage = (votes / total_votes) * 100
+                            
+                            # Mostrar barra de progreso y estadísticas
+                            col_opt, col_num = st.columns([3, 1])
+                            with col_opt:
+                                st.progress(percentage / 100)
+                                st.caption(f"{option}")
+                            with col_num:
+                                st.metric("", f"{votes}", f"{percentage:.1f}%")
+                        
+                        st.caption(f"Total de votos: {total_votes}")
+                    else:
+                        st.info("Aún no hay votos")
+                
                 else:
-                    st.info("Aún no hay votos")
+                    st.info("No hay encuestas activas en este momento")
+                    if st.session_state.user_type == "estudiante":
+                        st.caption("Espera a que el maestro lance una encuesta")
             
-            else:
-                st.info("No hay encuestas activas en este momento")
-                if st.session_state.user_type == "estudiante":
-                    st.caption("Espera a que el maestro lance una encuesta")
+            mostrar_encuestas()
     
     # Footer
     st.markdown("---")
-    footer_text = "👨‍🏫 **Panel del Maestro:** Controla el stream y crea encuestas desde el panel lateral" if st.session_state.user_type == "maestro" else "👨‍🎓 **Modo Estudiante:** La página se actualiza automáticamente. Presiona 🔄 para actualizar manualmente"
+    
+    # Indicador de actualización para estudiantes
+    if st.session_state.user_type == "estudiante":
+        col_f1, col_f2, col_f3 = st.columns([1, 2, 1])
+        with col_f2:
+            st.info("💡 Presiona 🔄 Actualizar en la esquina superior para ver nuevas encuestas")
+    
+    footer_text = "👨‍🏫 **Panel del Maestro:** Controla el stream y crea encuestas desde el panel lateral" if st.session_state.user_type == "maestro" else "👨‍🎓 **Modo Estudiante:** Disfruta del stream y participa en las encuestas"
     st.markdown(f"""
     <div style='text-align: center; color: #666;'>
         <p>{footer_text}</p>
     </div>
     """, unsafe_allow_html=True)
-    
-    # Auto-refresh para estudiantes usando meta refresh
-    if st.session_state.user_type == "estudiante":
-        st.markdown(
-            '<meta http-equiv="refresh" content="5">',
-            unsafe_allow_html=True
-        )
