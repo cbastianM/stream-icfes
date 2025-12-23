@@ -84,7 +84,8 @@ if 'connected_students' not in st.session_state:
 
 # Función para generar ID único de usuario
 def generate_user_id(username, user_type):
-    return hashlib.md5(f"{username}_{user_type}_{datetime.now().timestamp()}".encode()).hexdigest()[:8]
+    # Usar solo el nombre de usuario para que sea consistente entre sesiones
+    return hashlib.md5(f"{username}_{user_type}".encode()).hexdigest()[:8]
 
 # Pantalla de login
 if st.session_state.user_type is None:
@@ -134,6 +135,18 @@ if st.session_state.user_type is None:
 
 # Aplicación principal
 else:
+    # Actualizar actividad del estudiante al cargar la página
+    if st.session_state.user_type == "estudiante":
+        if st.session_state.user_id not in st.session_state.connected_students:
+            # Re-registrar al estudiante si no está en la lista
+            st.session_state.connected_students[st.session_state.user_id] = {
+                'username': st.session_state.username,
+                'last_activity': datetime.now()
+            }
+        else:
+            # Actualizar actividad
+            st.session_state.connected_students[st.session_state.user_id]['last_activity'] = datetime.now()
+    
     # Header con información del usuario
     col_header1, col_header2, col_header3 = st.columns([2, 2, 1])
     
@@ -393,16 +406,16 @@ else:
     
     # Footer
     st.markdown("---")
-    footer_text = "👨‍🏫 **Panel del Maestro:** Controla el stream y crea encuestas desde el panel lateral" if st.session_state.user_type == "maestro" else "👨‍🎓 **Modo Estudiante:** Disfruta del stream y participa en las encuestas"
+    footer_text = "👨‍🏫 **Panel del Maestro:** Controla el stream y crea encuestas desde el panel lateral" if st.session_state.user_type == "maestro" else "👨‍🎓 **Modo Estudiante:** La página se actualiza automáticamente. Presiona 🔄 para actualizar manualmente"
     st.markdown(f"""
     <div style='text-align: center; color: #666;'>
         <p>{footer_text}</p>
     </div>
     """, unsafe_allow_html=True)
     
-    # Auto-refresh para estudiantes (cada 5 segundos)
+    # Auto-refresh para estudiantes usando meta refresh
     if st.session_state.user_type == "estudiante":
-        import asyncio
-        placeholder = st.empty()
-        time.sleep(5)
-        st.rerun()
+        st.markdown(
+            '<meta http-equiv="refresh" content="5">',
+            unsafe_allow_html=True
+        )
